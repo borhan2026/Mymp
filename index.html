@@ -245,6 +245,19 @@
         .chat-input { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--border-color); align-items: flex-end; }
         .chat-input textarea { flex: 1; margin: 0; resize: none; min-height: 44px; max-height: 110px; }
         .chat-input button { width: auto; padding: 0 20px; margin: 0; height: 44px; }
+        .chat-input .ci-btn { width: 40px; min-width: 40px; padding: 0 !important; background: transparent !important; color: var(--primary-color); box-shadow: none !important; font-size: 20px; border-radius: 12px; flex: none; }
+        .chat-input .ci-btn:hover { background: var(--primary-light) !important; transform: none; }
+        .emoji-panel { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; padding: 8px; max-height: 190px; overflow-y: auto; border-top: 1px solid var(--border-color); background: #fff; }
+        .emoji-panel span { font-size: 24px; text-align: center; cursor: pointer; padding: 4px 0; border-radius: 8px; user-select: none; -webkit-user-select: none; }
+        .emoji-panel span:hover, .emoji-panel span:active { background: var(--primary-light); }
+        .rec-bar { background: #fff5f5; align-items: center; }
+        .rec-dot { width: 12px; height: 12px; border-radius: 50%; background: #e53935; animation: recPulse 1s infinite; flex: none; }
+        @keyframes recPulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.8); } }
+        .chat-img { display: block; width: 230px; max-width: 100%; border-radius: 12px; cursor: zoom-in; margin-bottom: 3px; }
+        .bubble audio { display: block; width: 230px; max-width: 100%; height: 40px; }
+        .bubble .adur { display: block; font-size: 11px; color: #778; margin-top: 2px; }
+        .img-view { position: fixed; inset: 0; z-index: 99998; background: rgba(0,0,0,.88); display: flex; align-items: center; justify-content: center; padding: 14px; cursor: zoom-out; }
+        .img-view img { max-width: 100%; max-height: 100%; border-radius: 8px; }
         .msg-tabs { display: flex; gap: 8px; margin: 12px 0; }
         .msg-tabs button { flex: 1; width: auto; margin: 0; background: #eef1f8; color: var(--text-dark); }
         .msg-tabs button.active { background: var(--primary-color); color: #fff; }
@@ -2849,7 +2862,8 @@
         let selUsers = new Set(), pendingOpen = null;
 
         const configured = () => FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.projectId && ADMIN_EMAIL;
-        const clearSubs = () => { stopTyping(); unsubs.forEach(u => { try { u(); } catch(e){} }); unsubs = []; };
+        let recording = false, mediaRec = null, recChunks = [], recStream = null, recStart = 0, recTimer = null, recCancelled = false, mediaBusy = false;
+        const clearSubs = () => { if(recording) recCancel(); stopTyping(); unsubs.forEach(u => { try { u(); } catch(e){} }); unsubs = []; };
         const initial = n => esc((n || '?').trim().charAt(0) || '?');
         const ms = t => (t && t.toMillis) ? t.toMillis() : 0;
         const okPhoto = p => typeof p === 'string' && p.indexOf('data:image/') === 0;
@@ -3230,7 +3244,7 @@
         function applyComposer(){
             const can = canWriteNow();
             const c = document.getElementById('chatComposer'), l = document.getElementById('chatLocked');
-            if(c) c.style.display = can ? 'flex' : 'none';
+            if(c) c.style.display = (can && !recording) ? 'flex' : 'none';
             if(l) l.style.display = can ? 'none' : 'flex';
         }
         function openChat(id, title, userName, noPush){
@@ -3246,7 +3260,9 @@
                 <div class="chat-msgs" id="chatMsgs"></div>
                 <div class="typing-line" id="typingLine"></div>
                 <div class="reply-bar" id="replyBar" style="display:none;"></div>
-                <div class="chat-input" id="chatComposer"><textarea id="chatText" rows="1" placeholder="মেসেজ লিখুন..." oninput="MSG.typing()"></textarea><button onclick="MSG.send()"><i class="fa-solid fa-paper-plane"></i></button></div>
+                <div class="emoji-panel" id="emojiPanel" style="display:none;"></div>
+                <div class="chat-input rec-bar" id="recBar" style="display:none;"><button type="button" class="ci-btn" onclick="MSG.recCancel()" style="color:#d32f2f;" aria-label="বাতিল"><i class="fa-solid fa-trash"></i></button><span class="rec-dot"></span><b id="recTime">0:00</b><span style="flex:1;"></span><button type="button" onclick="MSG.recStop()"><i class="fa-solid fa-paper-plane"></i></button></div>
+                <div class="chat-input" id="chatComposer"><button type="button" class="ci-btn" onclick="MSG.emojiToggle()" aria-label="Emoji"><i class="fa-regular fa-face-smile"></i></button><button type="button" class="ci-btn" onclick="document.getElementById('chatImg').click()" aria-label="ছবি"><i class="fa-regular fa-image"></i></button><input type="file" id="chatImg" accept="image/*" style="display:none" onchange="MSG.pickImage(this)"><textarea id="chatText" rows="1" placeholder="মেসেজ লিখুন..." oninput="MSG.typing()" onfocus="MSG.emojiClose()"></textarea><button type="button" class="ci-btn" id="chatMic" onclick="MSG.micStart()" aria-label="ভয়েস"><i class="fa-solid fa-microphone"></i></button><button id="chatSend" onclick="MSG.send()" style="display:none;"><i class="fa-solid fa-paper-plane"></i></button></div>
                 <div class="chat-input chat-locked" id="chatLocked" style="display:none;">এই গ্রুপে শুধু এডমিন মেসেজ লিখতে পারেন</div></div>`;
             applyComposer();
             const { F, db } = fb;
@@ -3265,7 +3281,7 @@
                     const mine = m.senderId === me.uid;
                     const t = m.createdAt && m.createdAt.toDate ? m.createdAt.toDate().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '';
                     const q = m.replyTo ? `<div class="quote" onclick="event.stopPropagation(); MSG.jumpTo('${esc(m.replyTo.id || '')}')"><b>${esc(m.replyTo.name)}</b><span>${esc(m.replyTo.text)}</span></div>` : '';
-                    return `<div class="bubble ${mine ? 'me' : ''}" id="mb_${d.id}" onclick="MSG.bubbleMenu(event, '${d.id}')">${(!mine && showWho) ? `<span class="who">${esc(m.senderName)}</span>` : ''}${q}${esc(m.text)}<span class="t">${t}</span></div>`;
+                    return `<div class="bubble ${mine ? 'me' : ''}" id="mb_${d.id}" onclick="MSG.bubbleMenu(event, '${d.id}')">${(!mine && showWho) ? `<span class="who">${esc(m.senderName)}</span>` : ''}${q}${mediaHtml(m)}<span class="t">${t}</span></div>`;
                 }).join('') || '<p style="color:var(--text-muted); text-align:center;">এখনো কোনো মেসেজ নেই।</p>';
                 box.scrollTop = box.scrollHeight;
             }, e => { console.error(e); const box = document.getElementById('chatMsgs'); if(box) box.innerHTML = '<p>মেসেজ লোড করা যায়নি।</p>'; }));
@@ -3290,6 +3306,7 @@
             if(names.length) typingTimer = setTimeout(renderTyping, 1200);
         }
         function typing(){
+            syncSendMic();
             if(!chat.id || !me || !canWriteNow()) return;
             const input = document.getElementById('chatText');
             if(input && !input.value.trim()){ stopTyping(); return; }
@@ -3326,26 +3343,168 @@
             el.scrollIntoView({ block: 'center', behavior: 'smooth' });
             el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1300);
         }
+        async function postMessage(text, extra, chatId){
+            chatId = chatId || chat.id;
+            const { F, db } = fb;
+            const senderName = isAdmin ? 'এডমিন' : profile.name;
+            const reply = replyTo; cancelReply(); stopTyping();
+            const ref = F.doc(db, 'chats', chatId);
+            if(isDmId(chatId)){
+                const uid = chatId.slice(3);
+                await F.setDoc(ref, { type: 'dm', members: [uid], userId: uid, userName: isAdmin ? chat.userName : profile.name, lastText: text, lastAt: F.serverTimestamp(), lastSender: senderName }, { merge: true });
+            } else {
+                await F.updateDoc(ref, { lastText: text, lastAt: F.serverTimestamp(), lastSender: senderName });
+            }
+            const payload = { text, senderId: me.uid, senderName, createdAt: F.serverTimestamp() };
+            if(extra) Object.assign(payload, extra);
+            if(reply) payload.replyTo = reply;
+            await F.addDoc(F.collection(db, 'chats', chatId, 'messages'), payload);
+        }
         async function send(){
             const input = document.getElementById('chatText');
             if(!input || !canWriteNow()) return;
             const text = input.value.trim(); if(!text) return;
-            input.value = '';
-            const { F, db } = fb;
-            const senderName = isAdmin ? 'এডমিন' : profile.name;
-            const reply = replyTo; cancelReply(); stopTyping();
+            input.value = ''; syncSendMic();
+            try { await postMessage(text); }
+            catch(e){ input.value = text; syncSendMic(); alert('মেসেজ পাঠানো যায়নি: ' + (e.code || e.message)); }
+        }
+
+        /* ---------- ইমোজি, ছবি ও ভয়েস ---------- */
+        const EMOJIS = '😀 😃 😄 😁 😆 😅 😂 🤣 🙂 😉 😊 😇 🥰 😍 🤩 😘 😋 😜 🤗 🤔 😐 😴 😢 😭 😡 😱 🥳 😎 🤝 👍 👎 👏 🙏 💪 👌 ✌️ 🤲 ❤️ 💛 💚 💙 💜 💔 ✨ 🔥 ⭐ 🌙 🕌 📖 📚 ✏️ 🎉 🎁 🌹 🌸 🌿 ☀️ 🌧️ ✅ ❌ ⚠️ ❓ ❗ 💯 🍎 🍌 🍇 🥭 🍚 🥛 ☕ ⚽ 🏏 🕋 🤲🏻 📿 🕊️ 🌟 💐 🫶 😌 🥹 😔 🤒 🤲🏽'.split(' ');
+        function syncSendMic(){
+            const t = document.getElementById('chatText'), s = document.getElementById('chatSend'), m = document.getElementById('chatMic');
+            if(!t || !s || !m) return;
+            const has = !!t.value.trim();
+            s.style.display = has ? 'flex' : 'none';
+            m.style.display = has ? 'none' : 'flex';
+        }
+        function emojiToggle(){
+            const p = document.getElementById('emojiPanel'); if(!p) return;
+            if(p.style.display === 'none'){
+                if(!p.innerHTML) p.innerHTML = EMOJIS.map(e => `<span onclick="MSG.emojiPick(this.textContent)">${e}</span>`).join('');
+                p.style.display = 'grid';
+            } else p.style.display = 'none';
+        }
+        function emojiClose(){ const p = document.getElementById('emojiPanel'); if(p) p.style.display = 'none'; }
+        function emojiPick(e){
+            const t = document.getElementById('chatText'); if(!t) return;
+            const a = t.selectionStart == null ? t.value.length : t.selectionStart, b = t.selectionEnd == null ? a : t.selectionEnd;
+            t.value = t.value.slice(0, a) + e + t.value.slice(b);
+            t.selectionStart = t.selectionEnd = a + e.length;
+            syncSendMic(); typing();
+        }
+        const okMedia = (u, kind) => typeof u === 'string' && (kind === 'image' ? /^(https:\/\/|data:image\/)/.test(u) : kind === 'audio' ? /^(https:\/\/|data:audio\/)/.test(u) : false);
+        const fmtDur = s => Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+        function mediaHtml(m){
+            if(m.kind && okMedia(m.url, m.kind)){
+                if(m.kind === 'image') return `<img class="chat-img" src="${esc(m.url)}" alt="ছবি" onclick="event.stopPropagation(); MSG.viewImg(this.src)">`;
+                return `<audio controls preload="none" src="${esc(m.url)}" onclick="event.stopPropagation()"></audio>${m.dur ? `<span class="adur">🎤 ${fmtDur(m.dur)}</span>` : ''}`;
+            }
+            return esc(m.text);
+        }
+        function viewImg(src){
+            if(!okMedia(src, 'image')) return;
+            const o = document.createElement('div'); o.className = 'img-view';
+            const i = document.createElement('img'); i.src = src; o.appendChild(i);
+            o.onclick = () => o.remove(); document.body.appendChild(o);
+        }
+        function blobToDataUrl(b){
+            return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(new Error('ফাইল পড়া যায়নি')); r.readAsDataURL(b); });
+        }
+        async function cloudUpload(kind, file, name){
+            const c = PROJECT.cloudinary || {};
+            if(!c.cloudName || !c.uploadPreset) return '';
             try {
-                const ref = F.doc(db, 'chats', chat.id);
-                if(isDmId(chat.id)){
-                    const uid = chat.id.slice(3);
-                    await F.setDoc(ref, { type: 'dm', members: [uid], userId: uid, userName: isAdmin ? chat.userName : profile.name, lastText: text, lastAt: F.serverTimestamp(), lastSender: senderName }, { merge: true });
-                } else {
-                    await F.updateDoc(ref, { lastText: text, lastAt: F.serverTimestamp(), lastSender: senderName });
-                }
-                const payload = { text, senderId: me.uid, senderName, createdAt: F.serverTimestamp() };
-                if(reply) payload.replyTo = reply;
-                await F.addDoc(F.collection(db, 'chats', chat.id, 'messages'), payload);
-            } catch(e){ input.value = text; alert('মেসেজ পাঠানো যায়নি: ' + (e.code || e.message)); }
+                const fd = new FormData();
+                if(name) fd.append('file', file, name); else fd.append('file', file);
+                fd.append('upload_preset', c.uploadPreset);
+                fd.append('folder', 'tajpur-madrasa/chat');
+                const res = await fetch(`https://api.cloudinary.com/v1_1/${encodeURIComponent(c.cloudName)}/${kind}/upload`, { method: 'POST', body: fd });
+                const data = await res.json();
+                return (res.ok && data.secure_url) ? data.secure_url : '';
+            } catch(e){ return ''; }
+        }
+        async function uploadChatImage(file){
+            let d = await compressImage(file, 1280, 0.8);
+            const url = await cloudUpload('image', d);
+            if(url) return url;
+            if(d.length > 700000) d = await compressImage(file, 800, 0.6);
+            if(d.length > 700000) throw new Error('ছবিটি অনেক বড়, ছোট ছবি দিন');
+            return d;
+        }
+        async function uploadChatAudio(blob){
+            const ext = /mp4/.test(blob.type) ? 'm4a' : /ogg/.test(blob.type) ? 'ogg' : 'webm';
+            const url = await cloudUpload('video', blob, 'voice.' + ext);
+            if(url) return url;
+            if(blob.size > 500000) throw new Error('ভয়েস আপলোড হয়নি, ইন্টারনেট দেখে আবার চেষ্টা করুন');
+            return await blobToDataUrl(blob);
+        }
+        async function sendMedia(kind, data, dur){
+            if(mediaBusy || !canWriteNow()) return;
+            mediaBusy = true;
+            const chatId = chat.id;
+            const tl = document.getElementById('typingLine');
+            if(tl) tl.innerHTML = `<span class="tdots"><i></i><i></i><i></i></span> ${kind === 'image' ? 'ছবি' : 'ভয়েস'} পাঠানো হচ্ছে…`;
+            try {
+                const url = kind === 'image' ? await uploadChatImage(data) : await uploadChatAudio(data);
+                const extra = { kind, url }; if(dur) extra.dur = dur;
+                await postMessage(kind === 'image' ? '📷 ছবি' : '🎤 ভয়েস মেসেজ', extra, chatId);
+            } catch(e){ alert('পাঠানো যায়নি: ' + (e.message || e.code || e)); }
+            finally {
+                mediaBusy = false;
+                const t2 = document.getElementById('typingLine');
+                if(t2 && t2.textContent.indexOf('পাঠানো হচ্ছে') !== -1) t2.innerHTML = '';
+            }
+        }
+        function pickImage(input){
+            const f = input.files && input.files[0]; input.value = '';
+            if(!f) return;
+            if(!/^image\//.test(f.type)){ alert('শুধু ছবি দিন'); return; }
+            emojiClose(); sendMedia('image', f);
+        }
+        async function micStart(){
+            if(!canWriteNow() || recording) return;
+            if(!navigator.mediaDevices || !window.MediaRecorder){ alert('এই ব্রাউজারে ভয়েস রেকর্ড সাপোর্ট নেই'); return; }
+            try { recStream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+            catch(e){ alert('মাইক্রোফোনের অনুমতি দিন'); return; }
+            const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
+            const mt = types.find(t => MediaRecorder.isTypeSupported(t)) || '';
+            recChunks = []; recCancelled = false;
+            try { mediaRec = new MediaRecorder(recStream, mt ? { mimeType: mt } : undefined); }
+            catch(e){ recStream.getTracks().forEach(t => t.stop()); recStream = null; alert('রেকর্ড শুরু করা যায়নি'); return; }
+            mediaRec.ondataavailable = e => { if(e.data && e.data.size) recChunks.push(e.data); };
+            mediaRec.onstop = onRecStop;
+            mediaRec.start();
+            recording = true; recStart = Date.now();
+            emojiClose();
+            const bar = document.getElementById('recBar'), tm = document.getElementById('recTime');
+            if(bar) bar.style.display = 'flex';
+            if(tm) tm.textContent = '0:00';
+            applyComposer();
+            recTimer = setInterval(() => {
+                const sec = Math.floor((Date.now() - recStart) / 1000);
+                const el = document.getElementById('recTime'); if(el) el.textContent = fmtDur(sec);
+                if(sec >= 120) recStop();
+            }, 500);
+        }
+        function recStop(){ if(mediaRec && mediaRec.state !== 'inactive') mediaRec.stop(); }
+        function recCancel(){
+            recCancelled = true;
+            if(mediaRec && mediaRec.state !== 'inactive') mediaRec.stop(); else endRec();
+        }
+        function endRec(){
+            clearInterval(recTimer); recTimer = null; recording = false;
+            if(recStream){ recStream.getTracks().forEach(t => t.stop()); recStream = null; }
+            const bar = document.getElementById('recBar'); if(bar) bar.style.display = 'none';
+            applyComposer(); syncSendMic();
+        }
+        async function onRecStop(){
+            const dur = Math.round((Date.now() - recStart) / 1000);
+            const type = (mediaRec && mediaRec.mimeType) || 'audio/webm';
+            const chunks = recChunks, cancelled = recCancelled;
+            endRec();
+            if(cancelled || dur < 1 || !chunks.length) return;
+            await sendMedia('audio', new Blob(chunks, { type }), dur);
         }
 
 
@@ -3680,7 +3839,7 @@
             if(authReady) renderRoot();
         }
 
-                return { gateBoot, gateUpdate, signOutAll, adminGmail, rootMenu, chatMenu, runMenu, bubbleMenu, jumpTo, cancelReply, typing, confirmAdd, removeMember, enableNotif, pickGroupPhoto, pop, act, pickAdminPhoto, delGroup, delUser, pickPhoto, open, restore: restoreWrap, authChanged, adminGoogle, setMode, togPass, emailAuth, resetPass, login, logoutG, saveProfile, editProfile, setTab, renderDm, newGroup, renderNg, togUser, ngAll, createGroup, openChat, send };
+                return { gateBoot, gateUpdate, signOutAll, adminGmail, rootMenu, chatMenu, runMenu, bubbleMenu, jumpTo, cancelReply, typing, confirmAdd, removeMember, enableNotif, pickGroupPhoto, pop, act, pickAdminPhoto, delGroup, delUser, pickPhoto, open, restore: restoreWrap, authChanged, adminGoogle, setMode, togPass, emailAuth, resetPass, login, logoutG, saveProfile, editProfile, setTab, renderDm, newGroup, renderNg, togUser, ngAll, createGroup, openChat, send, emojiToggle, emojiClose, emojiPick, pickImage, micStart, recStop, recCancel, viewImg };
     })();
     window.MSG.gateBoot();
     </script>
