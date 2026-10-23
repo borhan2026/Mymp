@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>জামিয়া কোরআনিয়া আরাবিয়া তাজপুর - ম্যানেজমেন্ট সিস্টেম</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://res.cloudinary.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
@@ -245,6 +249,13 @@
         .chat-input { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--border-color); align-items: flex-end; }
         .chat-input textarea { flex: 1; margin: 0; resize: none; min-height: 44px; max-height: 110px; }
         .chat-input button { width: auto; padding: 0 20px; margin: 0; height: 44px; }
+        /* ===== Message page: full screen ===== */
+        #page-message { animation: none; }
+        #page-message .container { max-width: none; margin: 0; padding: 0; }
+        #page-message .section-box { margin-top: 0; border-radius: 0; border: none; box-shadow: none; min-height: calc(100vh - 190px); min-height: calc(100dvh - 190px); }
+        body:has(#page-message.active #chatMsgs) .bottom-nav { display: none; }
+        body:has(#page-message.active #chatMsgs) .chat-wrap { position: fixed; inset: 0; z-index: 1500; width: 100%; height: 100vh; height: 100dvh; border-radius: 0; border: none; box-shadow: none; }
+        body:has(#page-message.active #chatMsgs) { padding-bottom: 0; }
         .chat-input .ci-btn { width: 40px; min-width: 40px; padding: 0 !important; background: transparent !important; color: var(--primary-color); box-shadow: none !important; font-size: 20px; border-radius: 12px; flex: none; }
         .chat-input .ci-btn:hover { background: var(--primary-light) !important; transform: none; }
         .emoji-panel { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; padding: 8px; max-height: 190px; overflow-y: auto; border-top: 1px solid var(--border-color); background: #fff; }
@@ -1106,8 +1117,6 @@
         </div>
     </div>
 
-    <!-- Footer -->
-    <footer><p>&copy; ২০২৬ জামিয়া কোরআনিয়া আরাবিয়া তাজপুর। সর্বস্বত্ব সংরক্ষিত।</p></footer>
 
     <!-- ============ BOTTOM NAV ============ -->
     <div class="bottom-nav">
@@ -1320,6 +1329,11 @@
         function openMessage(){ showPage('page-message'); }
         let deferredInstallPrompt=null;
         window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstallPrompt=e;refreshLocalMenu();});
+        function appInstalled(){
+            try{ if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) return true; }catch(e){}
+            return localStorage.getItem('appInstalled') === '1';
+        }
+        window.addEventListener('appinstalled',()=>{ deferredInstallPrompt=null; localStorage.setItem('appInstalled','1'); refreshLocalMenu(); });
         function publicNotifOn(){ return localStorage.getItem('publicNotif') !== '0'; }
         async function togglePublicNotifications(){
             if(!('Notification' in window)){ alert('এই ব্রাউজারে নোটিফিকেশন সাপোর্ট নেই'); return; }
@@ -1338,7 +1352,7 @@
             const admin=isAdminMode(); const signed=!!window.__firebaseUserSignedIn;
             let h='';
             if(admin) h += `<a onclick="openSettings('set-general')"><i class="fa-solid fa-gear"></i> General Info & Logo</a><a onclick="openSettings('set-contact')"><i class="fa-solid fa-address-book"></i> Contact Settings</a><a onclick="openSettings('set-result')"><i class="fa-solid fa-table-list"></i> Result Settings</a><a onclick="openSettings('set-lesson')"><i class="fa-solid fa-book-open"></i> Lesson Settings</a><a onclick="openSettings('set-receipt')"><i class="fa-solid fa-receipt"></i> Receipt Book Settings</a><hr><a onclick="openSettings('set-login')"><i class="fa-solid fa-lock"></i> Login Settings</a>`;
-            h += `<a onclick="togglePublicNotifications()"><i class="fa-${publicNotifOn()?'solid':'regular'} fa-bell"></i> নোটিফিকেশন ${publicNotifOn()?'বন্ধ করুন':'চালু করুন'}</a><a onclick="installMadrasaApp()"><i class="fa-solid fa-download"></i> অ্যাপ ডাউনলোড</a>`;
+            h += `<a onclick="togglePublicNotifications()"><i class="fa-${publicNotifOn()?'solid':'regular'} fa-bell"></i> নোটিফিকেশন ${publicNotifOn()?'বন্ধ করুন':'চালু করুন'}</a>${appInstalled()?'':'<a onclick="installMadrasaApp()"><i class="fa-solid fa-download"></i> অ্যাপ ডাউনলোড</a>'}`;
             if(admin) h += `<hr><a onclick="logout()"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>`;
             else if(signed) h += `<hr><a onclick="publicLogout()"><i class="fa-solid fa-right-from-bracket"></i> লগআউট</a>`;
             else h += `<hr><a onclick="openMessage()"><i class="fa-solid fa-right-to-bracket"></i> লগইন</a>`;
@@ -1425,13 +1439,32 @@
             });
         }
 
+        /* ===================== ছবি ছোট করে লোড (দ্রুত খোলার জন্য) ===================== */
+        function optImg(u, w){
+            if(typeof u !== 'string' || !u) return u;
+            try {
+                if(u.indexOf('res.cloudinary.com') > -1 && u.indexOf('/image/upload/') > -1){
+                    const m = u.split('/image/upload/');
+                    if(/^(f_|q_|w_|c_)/.test(m[1])) return u;
+                    return m[0] + '/image/upload/f_auto,q_auto,w_' + w + '/' + m[1];
+                }
+                if(u.indexOf('images.unsplash.com') > -1 && u.indexOf('?') < 0) return u + '?auto=format&fit=crop&q=70&w=' + w;
+            } catch(e){}
+            return u;
+        }
+
         /* ===================== Cloudinary image upload ===================== */
-        async function uploadImage(file, folder){
+        async function uploadImage(file, folder, maxSide){
             if(!file) return "";
             const c = PROJECT.cloudinary || {};
             if(c.cloudName && c.uploadPreset){
                 const fd = new FormData();
-                fd.append("file", file);
+                /* আপলোডের আগে ছবি ছোট করা (লোগো বাদে) — জায়গা ও ব্যান্ডউইথ বাঁচে */
+                let payload = file;
+                if(!/\/logo$/.test(folder || "")){
+                    try { payload = await compressImage(file, maxSide || 1000, 0.75); } catch(e){ payload = file; }
+                }
+                fd.append("file", payload);
                 fd.append("upload_preset", c.uploadPreset);
                 fd.append("folder", folder || "tajpur-madrasa");
                 const res = await fetch(`https://api.cloudinary.com/v1_1/${encodeURIComponent(c.cloudName)}/image/upload`, { method:"POST", body:fd });
@@ -1568,7 +1601,7 @@
                             <p><b>নাম:</b> ${student.name} &nbsp;|&nbsp; <b>পিতার নাম:</b> ${student.father || 'N/A'}</p>
                             <p><b>ঠিকানা:</b> ${student.address || 'N/A'} &nbsp;|&nbsp; <b>মোবাইল:</b> ${student.mobile || 'N/A'}</p>
                         </div>
-                        <img src="${student.image || 'https://via.placeholder.com/100'}" class="sheet-photo" onerror="this.src='https://via.placeholder.com/100'">
+                        <img src="${optImg(student.image, 300) || 'https://via.placeholder.com/100'}" class="sheet-photo" onerror="this.src='https://via.placeholder.com/100'">
                     </div>
                     <p><b>আইডি:</b> ${student.id} &nbsp;|&nbsp; <b>শ্রেণি:</b> ${student.dept}${student.birthReg ? (' &nbsp;|&nbsp; <b>জন্ম নিবন্ধন:</b> ' + student.birthReg) : ''}${student.birthDate ? (' &nbsp;|&nbsp; <b>জন্ম তারিখ:</b> ' + fmtBD(student.birthDate)) : ''}</p>
 
@@ -1667,7 +1700,7 @@
             student.birthReg = document.getElementById("editBirthReg").value.trim();
             student.birthDate = document.getElementById("editBirthDate").value;
             let imgFile = document.getElementById("editImage").files[0];
-            if(imgFile){ student.image = await toBase64(imgFile); }
+            if(imgFile){ try { student.image = await uploadImage(imgFile, "tajpur-madrasa/students"); } catch(e){ alert("❌ ছবি আপলোড হয়নি: " + e.message); return; } }
             localStorage.setItem("students", JSON.stringify(students));
             alert("✅ ছাত্রের তথ্য হালনাগাদ করা হয়েছে!");
             document.getElementById("searchId").value = id;
@@ -1689,7 +1722,7 @@
                             <p><b>নাম:</b> ${student.name} &nbsp;|&nbsp; <b>পিতার নাম:</b> ${student.father || 'N/A'}</p>
                             <p><b>ঠিকানা:</b> ${student.address || 'N/A'} &nbsp;|&nbsp; <b>মোবাইল:</b> ${student.mobile || 'N/A'}</p>
                         </div>
-                        <img src="${student.image || 'https://via.placeholder.com/100'}" class="sheet-photo">
+                        <img src="${optImg(student.image, 300) || 'https://via.placeholder.com/100'}" class="sheet-photo">
                     </div>
                     <p><b>আইডি:</b> ${student.id} &nbsp;|&nbsp; <b>শ্রেণি:</b> ${student.dept}${student.birthReg ? (' &nbsp;|&nbsp; <b>জন্ম নিবন্ধন:</b> ' + student.birthReg) : ''}${student.birthDate ? (' &nbsp;|&nbsp; <b>জন্ম তারিখ:</b> ' + fmtBD(student.birthDate)) : ''}</p>
                     ${examRows ? `<h3 style="color:#14213d; margin-top:10px;">রেজাল্ট সারাংশ</h3>
@@ -1723,7 +1756,7 @@
                 <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:15px;">
                     ${foundStudents.map(student => `
                         <div onclick="showStudentById('${student.id}')" style="background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:15px; text-align:center; cursor:pointer; box-shadow:var(--shadow-sm); transition:0.3s;">
-                            <img src="${student.image || 'https://via.placeholder.com/80'}" style="width:80px; height:80px; border-radius:50%; object-fit:cover; border:2px solid #4caf50; margin-bottom:8px;" onerror="this.src='https://via.placeholder.com/80'">
+                            <img loading="lazy" decoding="async" src="${optImg(student.image, 160) || 'https://via.placeholder.com/80'}" style="width:80px; height:80px; border-radius:50%; object-fit:cover; border:2px solid #4caf50; margin-bottom:8px;" onerror="this.src='https://via.placeholder.com/80'">
                             <div style="font-size:14px;">
                                 <b style="color:#333;">${student.name}</b><br>
                                 <small style="color:#777;">ID: ${student.id}</small><br>
@@ -1838,7 +1871,7 @@
             }
             box.innerHTML = `
                 <div class="card" style="display:flex; gap:15px; align-items:center;">
-                    <img src="${s.image || 'https://via.placeholder.com/70'}" style="width:70px; height:70px; border-radius:10px; object-fit:cover; border:2px solid var(--primary-color);" onerror="this.src='https://via.placeholder.com/70'">
+                    <img src="${optImg(s.image, 140) || 'https://via.placeholder.com/70'}" style="width:70px; height:70px; border-radius:10px; object-fit:cover; border:2px solid var(--primary-color);" onerror="this.src='https://via.placeholder.com/70'">
                     <div><b>${s.name}</b><br><small>পিতাঃ ${s.father || 'N/A'} | শ্রেণিঃ ${s.dept}</small><br><small>নির্ধারিত মাসিক ফিঃ ৳${s.monthlyFee || 0}${!s.monthlyFee ? ' (সেট করা হয়নি — এডিট থেকে সেট করুন)' : ''}</small></div>
                 </div>`;
             let activeBook = getActiveReceiptBook();
@@ -2294,7 +2327,7 @@
             let container = document.getElementById("sliderContainer");
             if(!container) return;
             container.innerHTML = slides.map((s, i) => `
-                <div class="slide ${i === 0 ? 'active' : ''}" style="background-image:url('${s.image}')">${(s.title || s.sub) ? `<div class="slide-caption">${s.title ? `<h1>${s.title}</h1>` : ''}${s.sub ? `<p>${s.sub}</p>` : ''}</div>` : ''}</div>`).join("") +
+                <div class="slide ${i === 0 ? 'active' : ''}" style="background-image:url('${optImg(s.image, 1200)}')">${(s.title || s.sub) ? `<div class="slide-caption">${s.title ? `<h1>${s.title}</h1>` : ''}${s.sub ? `<p>${s.sub}</p>` : ''}</div>` : ''}</div>`).join("") +
                 (slides.length > 1 ? `<button class="slider-arrow slider-prev" onclick="sliderPrev()" aria-label="Previous"><i class="fa-solid fa-chevron-left"></i></button><button class="slider-arrow slider-next" onclick="sliderNext()" aria-label="Next"><i class="fa-solid fa-chevron-right"></i></button>` : '') +
                 `<div class="slider-dots">${slides.map((s, i) => `<div class="dot ${i === 0 ? 'active' : ''}" onclick="goToSlide(${i});sliderStart()"></div>`).join("")}</div>`;
             currentSlide = 0;
@@ -2331,7 +2364,7 @@
             let file = document.getElementById("slideImage").files[0];
             if(!file){ alert("একটি ছবি নির্বাচন করুন"); return; }
             let image;
-            try { image = await uploadImage(file, "tajpur-madrasa/slides"); }
+            try { image = await uploadImage(file, "tajpur-madrasa/slides", 1600); }
             catch(e){ alert("❌ স্লাইডের ছবি আপলোড হয়নি: " + e.message); return; }
             const newSlide = { id: Date.now().toString(), title, sub, image };
             slides.push(newSlide);
@@ -2354,7 +2387,7 @@
             let box = document.getElementById("slideManageList");
             if(!box) return;
             box.innerHTML = slides.map(s => `
-                <div class="card"><img src="${s.image}" style="width:100%; height:100px; object-fit:cover; border-radius:8px;">
+                <div class="card"><img loading="lazy" src="${optImg(s.image, 400)}" style="width:100%; height:100px; object-fit:cover; border-radius:8px;">
                 <b>${s.title}</b><br><button class="delbtn" onclick="deleteSlide('${s.id}')">মুছুন</button></div>`).join("");
         }
         function deleteSlide(id){ if(!isAdminMode()) return;
@@ -2395,7 +2428,7 @@
             settings.email = document.getElementById("setEmail").value.trim() || settings.email;
             settings.eiin = document.getElementById("setEIIN").value.trim() || settings.eiin;
             let logoFile = document.getElementById("setLogo").files[0];
-            if(logoFile){ settings.logo = await toBase64(logoFile); }
+            if(logoFile){ try { settings.logo = await uploadImage(logoFile, "tajpur-madrasa/logo"); } catch(e){ alert("❌ লোগো আপলোড হয়নি: " + e.message); return; } }
             localStorage.setItem("settings", JSON.stringify(settings));
             applySettings();
             alert("✅ সেটিংস সংরক্ষিত হয়েছে!");
@@ -2590,7 +2623,7 @@
                             <p><b>নাম:</b> ${student.name} &nbsp;|&nbsp; <b>পিতার নাম:</b> ${student.father || 'N/A'}</p>
                             <p><b>আইডি নম্বর:</b> ${student.id} &nbsp;|&nbsp; <b>শ্রেণি:</b> ${student.dept}</p>
                         </div>
-                        <img src="${student.image || 'https://via.placeholder.com/100'}" class="sheet-photo" onerror="this.src='https://via.placeholder.com/100'">
+                        <img src="${optImg(student.image, 300) || 'https://via.placeholder.com/100'}" class="sheet-photo" onerror="this.src='https://via.placeholder.com/100'">
                     </div>
                     <table class="result-table">
                         <thead><tr><th>বইয়ের নাম</th><th>নির্ধারিত নম্বর</th><th>প্রাপ্ত নম্বর</th></tr></thead>
@@ -2841,6 +2874,24 @@
         renderLessonConfigList();
         renderReceiptBookList();
         populateReceiptBookSelect();
+
+        /* সার্ভার থেকে নতুন ডেটা এলে পেজ রিলোড ছাড়াই স্ক্রিন আপডেট */
+        window.__applyRemote = function(){
+            const L = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch(e){ return d; } };
+            students = L("students", []); notices = L("notices", []); lessons = L("lessons", []);
+            resultConfigs = L("resultConfigs", []); lessonConfigs = L("lessonConfigs", []);
+            teachers = L("teachers", []); syllabus = L("syllabus", []);
+            receipts = L("receipts", []); receiptBooks = L("receiptBooks", []);
+            const st = L("settings", null); if(st) settings = st;
+            const sl = L("slides", null);
+            const slidesChanged = !!sl && JSON.stringify(sl) !== JSON.stringify(slides);
+            if(sl) slides = sl;
+            applySettings(); fillSettingsForm();
+            if(slidesChanged) renderSlider();
+            renderTeachers(); renderTeacherConfigList(); renderSyllabusAdmin(); renderSyllabusView();
+            renderNotices(); renderLessons(); renderSlideManageList(); renderConfigList(); renderLessonConfigList();
+            renderReceiptBookList(); populateReceiptBookSelect();
+        };
     </script>
 
     <!-- ============ Firebase সেটআপ (মেসেজের জন্য) ============ -->
@@ -3466,7 +3517,14 @@
             if(!canWriteNow() || recording) return;
             if(!navigator.mediaDevices || !window.MediaRecorder){ alert('এই ব্রাউজারে ভয়েস রেকর্ড সাপোর্ট নেই'); return; }
             try { recStream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
-            catch(e){ alert('মাইক্রোফোনের অনুমতি দিন'); return; }
+            catch(e){
+                const n = e && e.name;
+                if(n === 'NotFoundError') alert('এই ডিভাইসে মাইক্রোফোন পাওয়া যায়নি');
+                else if(n === 'NotReadableError') alert('মাইক্রোফোন অন্য অ্যাপ ব্যবহার করছে। সেটি বন্ধ করে আবার চেষ্টা করুন');
+                else if(!window.isSecureContext) alert('মাইক্রোফোনের জন্য সাইট https-এ খুলতে হবে');
+                else alert('মাইক্রোফোনের অনুমতি বন্ধ আছে।\n\nঠিক করতে: ব্রাউজারের ঠিকানার পাশের 🔒 বা ⋮ → Site settings → Microphone → Allow করুন। অ্যাপ হিসেবে ইনস্টল করা থাকলে ফোনের Settings → Apps → এই অ্যাপ/Chrome → Permissions → Microphone → Allow করুন। তারপর পেজ রিফ্রেশ করে আবার চাপুন।');
+                return;
+            }
             const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
             const mt = types.find(t => MediaRecorder.isTypeSupported(t)) || '';
             recChunks = []; recCancelled = false;
@@ -3893,12 +3951,9 @@ import { getFirestore, doc, getDoc, setDoc, deleteDoc, onSnapshot } from "https:
     async function readRemote(k){
         const s = await getDoc(doc(db, "kv", k));
         if(!s.exists()) return null;
-        const n = s.data().n || 0; let out = "";
-        for(let i = 0; i < n; i++){
-            const p = await getDoc(doc(db, "kv", k, "parts", String(i)));
-            out += (p.data() || {}).d || "";
-        }
-        return out;
+        const n = s.data().n || 0;
+        const parts = await Promise.all(Array.from({ length: n }, (_, i) => getDoc(doc(db, "kv", k, "parts", String(i)))));
+        return parts.map(p => (p.data() || {}).d || "").join("");
     }
     async function writeRemote(k, val){
         const n = Math.max(1, Math.ceil(val.length / PART));
@@ -3937,11 +3992,9 @@ import { getFirestore, doc, getDoc, setDoc, deleteDoc, onSnapshot } from "https:
     }
 
     async function boot(){
-        const reloaded = sessionStorage.getItem(FLAG) === "1";
-        sessionStorage.removeItem(FLAG);
         const list = readable();
         let changed = false;
-        for(const k of list){
+        await Promise.all(list.map(async k => {
             try {
                 const remote = await readRemote(k);
                 const local = localStorage.getItem(k);
@@ -3952,8 +4005,8 @@ import { getFirestore, doc, getDoc, setDoc, deleteDoc, onSnapshot } from "https:
                     await writeRemote(k, forRemote(k, local));   // প্রথমবার: এই ডিভাইসের আগের ডেটা সার্ভারে তোলা
                 }
             } catch(e){ console.warn("sync boot", k, e && (e.code || e.message)); }
-        }
-        if(changed && !reloaded){ sessionStorage.setItem(FLAG, "1"); location.reload(); }
+        }));
+        if(changed && window.__applyRemote) window.__applyRemote();
     }
 
     function listen(){
@@ -3965,7 +4018,7 @@ import { getFirestore, doc, getDoc, setDoc, deleteDoc, onSnapshot } from "https:
                     const remote = await readRemote(k);
                     const local = localStorage.getItem(k);
                     const next = mergeLocal(k, remote, local);
-                    if(next !== local){ const hadLocal = local !== null; localStorage.setItem(k, next); showRefresh(); if(hadLocal && window.publicDataNotify) window.publicDataNotify(k); }
+                    if(next !== local){ const hadLocal = local !== null; localStorage.setItem(k, next); if(window.__applyRemote) window.__applyRemote(); else showRefresh(); if(hadLocal && window.publicDataNotify) window.publicDataNotify(k); }
                 } catch(e){}
             }, () => {}));
         });
@@ -3987,6 +4040,13 @@ import { getFirestore, doc, getDoc, setDoc, deleteDoc, onSnapshot } from "https:
 </script>
     <script>
 if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.addEventListener("message", function (e) {
+        if (!e.data || e.data.type !== "NEW_VERSION" || document.getElementById("updBar")) return;
+        var b = document.createElement("div"); b.id = "updBar";
+        b.style.cssText = "position:fixed;left:50%;transform:translateX(-50%);bottom:96px;z-index:4500;background:#14213d;color:#fff;padding:10px 14px;border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.3);font-size:14px;display:flex;gap:12px;align-items:center;white-space:nowrap";
+        b.innerHTML = '<span>অ্যাপের নতুন ভার্সন এসেছে</span><button style="width:auto;margin:0;padding:6px 12px;background:#f0a500;color:#14213d;border:none;border-radius:10px;font-weight:700;cursor:pointer" onclick="location.reload()">আপডেট</button>';
+        document.body.appendChild(b);
+    });
     window.addEventListener("load", function () {
         navigator.serviceWorker
             .register("./service-worker.js")
