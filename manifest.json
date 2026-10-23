@@ -1,24 +1,21 @@
 {
-  "name": "জামিয়া কুরআনিয়া আরাবিয়া তাজপুর",
+  "name": "জামিয়া কোরআনিয়া আরাবিয়া তাজপুর",
   "short_name": "তাজপুর মাদ্রাসা",
+  "description": "মাদরাসা ম্যানেজমেন্ট সিস্টেম",
+  "lang": "bn",
+  "dir": "ltr",
   "start_url": "./index.html",
   "scope": "./",
+  "id": "./index.html",
   "display": "standalone",
-  "background_color": "#f2f4f9",
+  "orientation": "portrait",
+  "background_color": "#14213d",
   "theme_color": "#14213d",
-  "lang": "bn",
   "icons": [
-    {
-      "src": "./icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "./icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
-    }
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-192-maskable.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }
+
