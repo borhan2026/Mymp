@@ -569,6 +569,16 @@
         .pdf-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px}.pdf-actions button{width:auto!important;margin:0!important;padding:8px 12px!important}
         .pdf-reader{position:fixed;inset:0;z-index:99999;background:#eef2f8;display:none;flex-direction:column}.pdf-reader.open{display:flex}.pdf-reader-head{height:58px;background:#0d1d3b;color:#fff;display:flex;align-items:center;gap:10px;padding:8px 12px;box-shadow:0 2px 10px #0003}.pdf-reader-head b{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pdf-reader-head button,.pdf-reader-head a{width:auto;margin:0;padding:9px 12px;border:0;border-radius:10px;background:#fff;color:#0d1d3b;text-decoration:none;font-weight:700}.pdf-reader iframe{flex:1;width:100%;border:0;background:#fff}
     </style>
+    <!-- PWA Setup -->
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#14213d">
+
+<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
+<link rel="apple-touch-icon" href="./icon-192.png">
+
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="তাজপুর মাদ্রাসা">
 </head>
 <body>
 
@@ -3815,5 +3825,19 @@ import { getFirestore, doc, getDoc, setDoc, deleteDoc, onSnapshot } from "https:
     });
 })();
 </script>
+    <script>
+if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function () {
+        navigator.serviceWorker
+            .register("./service-worker.js")
+            .then(function () {
+                console.log("PWA Service Worker চালু হয়েছে");
+            })
+            .catch(function (error) {
+                console.log("Service Worker Error:", error);
+            });
+    });
+}
+    </script>
 </body>
 </html>
